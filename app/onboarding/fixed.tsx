@@ -1,3 +1,4 @@
+import { SettingsAccent } from "@/constants/theme";
 import { useBudgetContext } from "@/hooks/BudgetContext";
 import {
     getFixedExpenses,
@@ -83,7 +84,7 @@ export default function FixedScreen() {
     setEditAmount(current === 0 ? "" : current.toString());
   };
 
-  const handleConfirmEdit = () => {
+  const handleConfirmEdit = async () => {
     if (editingIndex === null) return;
 
     const cleaned = editAmount.replace(/[^0-9.]/g, "");
@@ -99,6 +100,11 @@ export default function FixedScreen() {
     setEditingIndex(null);
     setEditAmount("");
     Keyboard.dismiss();
+
+    if (isEditMode) {
+      await saveFixedExpenses(updated);
+      await refresh();
+    }
   };
 
   return (
@@ -124,26 +130,56 @@ export default function FixedScreen() {
 
         <View className="gap-3 mb-6">
           {expenses.map((expense, index) => (
-            <View key={index} className="bg-white rounded-2xl p-4">
+            <View
+              key={index}
+              style={{
+                borderRadius: 16,
+                padding: 16,
+                borderWidth: 2,
+                borderColor: SettingsAccent,
+                backgroundColor: "transparent",
+              }}
+            >
               <View className="flex-row items-center justify-between mb-2">
                 <View className="flex-row items-center flex-1">
                   <TouchableOpacity
-                    onPress={() => toggleExpense(index)}
-                    className={`w-6 h-6 rounded border-2 mr-3 ${
-                      expense.enabled
-                        ? "bg-black border-black"
-                        : "border-gray-400"
-                    }`}
+                    onPress={() => {
+                      toggleExpense(index);
+                      if (isEditMode) {
+                        const u = [...expenses];
+                        u[index] = { ...u[index], enabled: !u[index].enabled };
+                        saveFixedExpenses(u).then(refresh);
+                      }
+                    }}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 12,
+                      borderWidth: 2,
+                      borderColor: expense.enabled ? SettingsAccent : "#9ca3af",
+                      backgroundColor: expense.enabled
+                        ? SettingsAccent
+                        : "transparent",
+                      marginRight: 12,
+                    }}
                   >
                     {expense.enabled && (
-                      <Ionicons name="checkmark" size={16} color="white" />
+                      <Ionicons name="checkmark" size={16} color="#000" />
                     )}
                   </TouchableOpacity>
-                  <Text className="text-black font-semibold flex-1">
+                  <Text className="text-white font-semibold flex-1">
                     {expense.name}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => removeExpense(index)}>
+                <TouchableOpacity
+                  onPress={() => {
+                    removeExpense(index);
+                    if (isEditMode && expenses.length > 1) {
+                      const u = expenses.filter((_, i) => i !== index);
+                      saveFixedExpenses(u).then(refresh);
+                    }
+                  }}
+                >
                   <Ionicons name="trash-outline" size={20} color="#ef4444" />
                 </TouchableOpacity>
               </View>
@@ -151,17 +187,27 @@ export default function FixedScreen() {
               <TouchableOpacity
                 onPress={() => openAmountEditor(index)}
                 activeOpacity={0.8}
-                className="bg-gray-100 rounded-xl p-3"
+                style={{
+                  borderRadius: 12,
+                  padding: 12,
+                  borderWidth: 2,
+                  borderColor: SettingsAccent,
+                  backgroundColor: "rgba(34, 197, 94, 0.1)",
+                }}
               >
-                <Text className="text-black text-xs mb-1">Amount / month</Text>
+                <Text className="text-white text-xs mb-1 opacity-80">
+                  Amount / month
+                </Text>
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center">
-                    <Text className="text-black text-lg mr-1">$</Text>
-                    <Text className="text-black text-lg">
+                    <Text style={{ color: SettingsAccent, fontSize: 18 }}>
+                      $
+                    </Text>
+                    <Text style={{ color: SettingsAccent, fontSize: 18 }}>
                       {expense.amountMonthly.toFixed(2)}
                     </Text>
                   </View>
-                  <Ionicons name="pencil" size={18} color="#4b5563" />
+                  <Ionicons name="pencil" size={18} color={SettingsAccent} />
                 </View>
               </TouchableOpacity>
             </View>
@@ -170,22 +216,45 @@ export default function FixedScreen() {
 
         <TouchableOpacity
           onPress={addCustomExpense}
-          className="bg-gray-800 rounded-2xl p-4 items-center mb-6"
+          style={{
+            borderRadius: 16,
+            padding: 16,
+            alignItems: "center",
+            marginBottom: 24,
+            borderWidth: 2,
+            borderColor: SettingsAccent,
+            backgroundColor: "transparent",
+          }}
         >
           <View className="flex-row items-center">
-            <Ionicons name="add" size={24} color="white" />
-            <Text className="text-white text-lg font-semibold ml-2">
+            <Ionicons name="add" size={24} color={SettingsAccent} />
+            <Text
+              style={{
+                color: SettingsAccent,
+                fontSize: 18,
+                fontWeight: "600",
+                marginLeft: 8,
+              }}
+            >
               Add another fixed expense
             </Text>
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={handleContinue}
-          className="bg-white rounded-2xl p-4 items-center mb-8"
-        >
-          <Text className="text-black text-lg font-bold">Continue</Text>
-        </TouchableOpacity>
+        {!isEditMode && (
+          <TouchableOpacity
+            onPress={handleContinue}
+            style={{
+              backgroundColor: SettingsAccent,
+              borderRadius: 16,
+              padding: 16,
+              alignItems: "center",
+              marginBottom: 32,
+            }}
+          >
+            <Text className="text-black text-lg font-bold">Continue</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       <Modal
@@ -237,10 +306,18 @@ export default function FixedScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleConfirmEdit}
-                className="flex-1 bg-black rounded-2xl p-4 items-center flex-row justify-center"
+                style={{
+                  flex: 1,
+                  backgroundColor: SettingsAccent,
+                  borderRadius: 16,
+                  padding: 16,
+                  alignItems: "center",
+                  flexDirection: "row",
+                  justifyContent: "center",
+                }}
               >
-                <Ionicons name="checkmark" size={20} color="#fff" />
-                <Text className="text-white font-semibold ml-2">Confirm</Text>
+                <Ionicons name="checkmark" size={20} color="#000" />
+                <Text className="text-black font-semibold ml-2">Confirm</Text>
               </TouchableOpacity>
             </View>
           </View>

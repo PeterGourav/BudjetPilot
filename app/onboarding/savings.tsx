@@ -1,19 +1,36 @@
+import { SettingsAccent } from "@/constants/theme";
 import { useBudgetContext } from "@/hooks/BudgetContext";
 import {
-  getSavingsGoal,
-  saveSavingsGoal,
-  type SavingsGoal,
+    getSavingsGoal,
+    saveSavingsGoal,
+    type SavingsGoal,
 } from "@/services/database";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
+
+function buildSavingsData(
+  enabled: boolean,
+  savingsType: "Emergency" | "Goal" | "Both",
+  savingsMode: "fixedAmount" | "percent",
+  savingsValue: string,
+  goalName: string,
+): SavingsGoal {
+  return {
+    enabled,
+    savingsType: enabled ? savingsType : undefined,
+    savingsMode: enabled ? savingsMode : undefined,
+    savingsValue: enabled ? parseFloat(savingsValue) : undefined,
+    goalName: enabled && goalName ? goalName : undefined,
+  };
+}
 
 export default function SavingsScreen() {
   const params = useLocalSearchParams();
@@ -39,20 +56,29 @@ export default function SavingsScreen() {
     const existing = await getSavingsGoal();
     if (existing) {
       setEnabled(existing.enabled);
-      if (existing.savingsType) {
-        setSavingsType(existing.savingsType);
-      }
-      if (existing.savingsMode) {
-        setSavingsMode(existing.savingsMode);
-      }
+      if (existing.savingsType) setSavingsType(existing.savingsType);
+      if (existing.savingsMode) setSavingsMode(existing.savingsMode);
       if (existing.savingsValue) {
         setSavingsValue(existing.savingsValue.toString());
       }
-      if (existing.goalName) {
-        setGoalName(existing.goalName);
-      }
+      if (existing.goalName) setGoalName(existing.goalName);
     }
   };
+
+  const saveAndRefresh = useCallback(
+    async (data: SavingsGoal) => {
+      await saveSavingsGoal(data);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const applyChange = useCallback(
+    (data: SavingsGoal) => {
+      if (isEditMode) saveAndRefresh(data);
+    },
+    [isEditMode, saveAndRefresh],
+  );
 
   const handleContinue = async () => {
     if (enabled) {
@@ -66,22 +92,32 @@ export default function SavingsScreen() {
         return;
       }
     }
-
-    const data: SavingsGoal = {
+    const data = buildSavingsData(
       enabled,
-      savingsType: enabled ? savingsType : undefined,
-      savingsMode: enabled ? savingsMode : undefined,
-      savingsValue: enabled ? parseFloat(savingsValue) : undefined,
-      goalName: enabled && goalName ? goalName : undefined,
-    };
-
+      savingsType,
+      savingsMode,
+      savingsValue,
+      goalName,
+    );
     await saveSavingsGoal(data);
     await refresh();
-    if (isEditMode) {
-      router.back();
-    } else {
-      router.push("/onboarding/debt");
-    }
+    router.push("/onboarding/debt");
+  };
+
+  const cardStyle = {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: SettingsAccent,
+    backgroundColor: "transparent" as const,
+  };
+
+  const inputStyle = {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: SettingsAccent,
+    backgroundColor: "transparent" as const,
   };
 
   return (
@@ -107,30 +143,58 @@ export default function SavingsScreen() {
 
         <View className="gap-4 mb-6">
           <TouchableOpacity
-            onPress={() => setEnabled(true)}
-            className={`rounded-2xl p-4 ${
-              enabled ? "bg-white" : "bg-gray-800"
-            }`}
+            onPress={() => {
+              setEnabled(true);
+              applyChange(
+                buildSavingsData(
+                  true,
+                  savingsType,
+                  savingsMode,
+                  savingsValue,
+                  goalName,
+                ),
+              );
+            }}
+            style={{
+              ...cardStyle,
+              backgroundColor: enabled ? SettingsAccent : "transparent",
+            }}
           >
             <Text
-              className={`text-lg font-semibold ${
-                enabled ? "text-black" : "text-white"
-              }`}
+              style={{
+                fontSize: 18,
+                fontWeight: "600",
+                color: enabled ? "#000" : "#fff",
+              }}
             >
               Yes
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setEnabled(false)}
-            className={`rounded-2xl p-4 ${
-              !enabled ? "bg-white" : "bg-gray-800"
-            }`}
+            onPress={() => {
+              setEnabled(false);
+              applyChange(
+                buildSavingsData(
+                  false,
+                  savingsType,
+                  savingsMode,
+                  savingsValue,
+                  goalName,
+                ),
+              );
+            }}
+            style={{
+              ...cardStyle,
+              backgroundColor: !enabled ? SettingsAccent : "transparent",
+            }}
           >
             <Text
-              className={`text-lg font-semibold ${
-                !enabled ? "text-black" : "text-white"
-              }`}
+              style={{
+                fontSize: 18,
+                fontWeight: "600",
+                color: !enabled ? "#000" : "#fff",
+              }}
             >
               Not right now
             </Text>
@@ -147,15 +211,33 @@ export default function SavingsScreen() {
                 {(["Emergency", "Goal", "Both"] as const).map((type) => (
                   <TouchableOpacity
                     key={type}
-                    onPress={() => setSavingsType(type)}
-                    className={`flex-1 rounded-xl p-3 ${
-                      savingsType === type ? "bg-white" : "bg-gray-800"
-                    }`}
+                    onPress={() => {
+                      setSavingsType(type);
+                      applyChange(
+                        buildSavingsData(
+                          true,
+                          type,
+                          savingsMode,
+                          savingsValue,
+                          goalName,
+                        ),
+                      );
+                    }}
+                    style={{
+                      flex: 1,
+                      borderRadius: 12,
+                      padding: 12,
+                      backgroundColor:
+                        savingsType === type ? SettingsAccent : "transparent",
+                      borderWidth: 2,
+                      borderColor: SettingsAccent,
+                    }}
                   >
                     <Text
-                      className={`text-center ${
-                        savingsType === type ? "text-black" : "text-white"
-                      }`}
+                      style={{
+                        textAlign: "center",
+                        color: savingsType === type ? "#000" : "#fff",
+                      }}
                     >
                       {type}
                     </Text>
@@ -172,15 +254,33 @@ export default function SavingsScreen() {
                 {(["fixedAmount", "percent"] as const).map((mode) => (
                   <TouchableOpacity
                     key={mode}
-                    onPress={() => setSavingsMode(mode)}
-                    className={`flex-1 rounded-xl p-3 ${
-                      savingsMode === mode ? "bg-white" : "bg-gray-800"
-                    }`}
+                    onPress={() => {
+                      setSavingsMode(mode);
+                      applyChange(
+                        buildSavingsData(
+                          true,
+                          savingsType,
+                          mode,
+                          savingsValue,
+                          goalName,
+                        ),
+                      );
+                    }}
+                    style={{
+                      flex: 1,
+                      borderRadius: 12,
+                      padding: 12,
+                      backgroundColor:
+                        savingsMode === mode ? SettingsAccent : "transparent",
+                      borderWidth: 2,
+                      borderColor: SettingsAccent,
+                    }}
                   >
                     <Text
-                      className={`text-center ${
-                        savingsMode === mode ? "text-black" : "text-white"
-                      }`}
+                      style={{
+                        textAlign: "center",
+                        color: savingsMode === mode ? "#000" : "#fff",
+                      }}
                     >
                       {mode === "fixedAmount" ? "Fixed Amount" : "Percentage"}
                     </Text>
@@ -195,14 +295,25 @@ export default function SavingsScreen() {
                   ? "Amount"
                   : "Percentage (0-50%)"}
               </Text>
-              <View className="bg-white rounded-2xl p-4">
+              <View style={inputStyle}>
                 <TextInput
                   value={savingsValue}
                   onChangeText={setSavingsValue}
+                  onBlur={() =>
+                    applyChange(
+                      buildSavingsData(
+                        true,
+                        savingsType,
+                        savingsMode,
+                        savingsValue,
+                        goalName,
+                      ),
+                    )
+                  }
                   placeholder="0.00"
                   keyboardType="numeric"
-                  style={{ color: "#000", fontSize: 20 }}
-                  placeholderTextColor="#999"
+                  style={{ color: "#fff", fontSize: 20 }}
+                  placeholderTextColor="rgba(255,255,255,0.5)"
                 />
               </View>
             </View>
@@ -211,25 +322,44 @@ export default function SavingsScreen() {
               <Text className="text-white font-semibold mb-3">
                 Goal Name (Optional)
               </Text>
-              <View className="bg-white rounded-2xl p-4">
+              <View style={inputStyle}>
                 <TextInput
                   value={goalName}
                   onChangeText={setGoalName}
+                  onBlur={() =>
+                    applyChange(
+                      buildSavingsData(
+                        true,
+                        savingsType,
+                        savingsMode,
+                        savingsValue,
+                        goalName,
+                      ),
+                    )
+                  }
                   placeholder="Trip, Down payment, etc."
-                  style={{ color: "#000" }}
-                  placeholderTextColor="#999"
+                  style={{ color: "#fff" }}
+                  placeholderTextColor="rgba(255,255,255,0.5)"
                 />
               </View>
             </View>
           </View>
         )}
 
-        <TouchableOpacity
-          onPress={handleContinue}
-          className="bg-white rounded-2xl p-4 items-center mb-8"
-        >
-          <Text className="text-black text-lg font-bold">Continue</Text>
-        </TouchableOpacity>
+        {!isEditMode && (
+          <TouchableOpacity
+            onPress={handleContinue}
+            style={{
+              backgroundColor: SettingsAccent,
+              borderRadius: 16,
+              padding: 16,
+              alignItems: "center",
+              marginBottom: 32,
+            }}
+          >
+            <Text className="text-black text-lg font-bold">Continue</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </View>
   );

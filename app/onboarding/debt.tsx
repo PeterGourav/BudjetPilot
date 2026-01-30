@@ -1,17 +1,18 @@
+import { SettingsAccent } from "@/constants/theme";
 import { useBudgetContext } from "@/hooks/BudgetContext";
 import { getDebts, saveDebts, type Debt } from "@/services/database";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 const DEBT_TYPES: Debt["debtType"][] = [
@@ -30,6 +31,22 @@ const PAYOFF_GOALS: Debt["payoffGoal"][] = [
   "customDate",
 ];
 
+const cardStyle = {
+  borderRadius: 16,
+  padding: 16,
+  borderWidth: 2,
+  borderColor: SettingsAccent,
+  backgroundColor: "transparent" as const,
+};
+
+const inputStyle = {
+  borderRadius: 16,
+  padding: 16,
+  borderWidth: 2,
+  borderColor: SettingsAccent,
+  backgroundColor: "transparent" as const,
+};
+
 export default function DebtScreen() {
   const params = useLocalSearchParams();
   const isEditMode = params.mode === "edit";
@@ -38,6 +55,14 @@ export default function DebtScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const { refresh } = useBudgetContext();
+
+  const [debtType, setDebtType] = useState<Debt["debtType"]>("Credit Card");
+  const [balance, setBalance] = useState("");
+  const [minPayment, setMinPayment] = useState("");
+  const [dueDay, setDueDay] = useState("");
+  const [payoffGoal, setPayoffGoal] = useState<Debt["payoffGoal"]>("ASAP");
+  const [customPayoffDate, setCustomPayoffDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     if (isEditMode) {
@@ -53,13 +78,13 @@ export default function DebtScreen() {
     }
   };
 
-  const [debtType, setDebtType] = useState<Debt["debtType"]>("Credit Card");
-  const [balance, setBalance] = useState("");
-  const [minPayment, setMinPayment] = useState("");
-  const [dueDay, setDueDay] = useState("");
-  const [payoffGoal, setPayoffGoal] = useState<Debt["payoffGoal"]>("ASAP");
-  const [customPayoffDate, setCustomPayoffDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const saveAndRefresh = useCallback(
+    async (list: Debt[]) => {
+      await saveDebts(list);
+      await refresh();
+    },
+    [refresh],
+  );
 
   const resetForm = () => {
     setDebtType("Credit Card");
@@ -83,17 +108,20 @@ export default function DebtScreen() {
           : undefined,
     };
 
+    let next: Debt[];
     if (editingIndex !== null) {
-      const updated = [...debts];
-      updated[editingIndex] = debt;
-      setDebts(updated);
+      next = [...debts];
+      next[editingIndex] = debt;
       setEditingIndex(null);
     } else {
-      setDebts([...debts, debt]);
+      next = [...debts, debt];
     }
-
+    setDebts(next);
     resetForm();
     setShowAddModal(false);
+    if (isEditMode) {
+      saveAndRefresh(next);
+    }
   };
 
   const handleEdit = (index: number) => {
@@ -111,7 +139,11 @@ export default function DebtScreen() {
   };
 
   const handleRemove = (index: number) => {
-    setDebts(debts.filter((_, i) => i !== index));
+    const next = debts.filter((_, i) => i !== index);
+    setDebts(next);
+    if (isEditMode) {
+      saveAndRefresh(next);
+    }
   };
 
   const handleContinue = async () => {
@@ -119,14 +151,9 @@ export default function DebtScreen() {
       alert('Please add at least one debt or select "No"');
       return;
     }
-
     await saveDebts(hasDebt ? debts : []);
     await refresh();
-    if (isEditMode) {
-      router.back();
-    } else {
-      router.push("/onboarding/summary");
-    }
+    router.push("/onboarding/summary");
   };
 
   return (
@@ -154,14 +181,20 @@ export default function DebtScreen() {
           <TouchableOpacity
             onPress={() => {
               setHasDebt(true);
-              if (debts.length === 0) {
-                setShowAddModal(true);
-              }
+              if (debts.length === 0) setShowAddModal(true);
+              if (isEditMode) saveAndRefresh(debts);
             }}
-            className={`rounded-2xl p-4 ${hasDebt ? "bg-white" : "bg-gray-800"}`}
+            style={{
+              ...cardStyle,
+              backgroundColor: hasDebt ? SettingsAccent : "transparent",
+            }}
           >
             <Text
-              className={`text-lg font-semibold ${hasDebt ? "text-black" : "text-white"}`}
+              style={{
+                fontSize: 18,
+                fontWeight: "600",
+                color: hasDebt ? "#000" : "#fff",
+              }}
             >
               Yes
             </Text>
@@ -171,11 +204,19 @@ export default function DebtScreen() {
             onPress={() => {
               setHasDebt(false);
               setDebts([]);
+              if (isEditMode) saveAndRefresh([]);
             }}
-            className={`rounded-2xl p-4 ${!hasDebt ? "bg-white" : "bg-gray-800"}`}
+            style={{
+              ...cardStyle,
+              backgroundColor: !hasDebt ? SettingsAccent : "transparent",
+            }}
           >
             <Text
-              className={`text-lg font-semibold ${!hasDebt ? "text-black" : "text-white"}`}
+              style={{
+                fontSize: 18,
+                fontWeight: "600",
+                color: !hasDebt ? "#000" : "#fff",
+              }}
             >
               No
             </Text>
@@ -185,14 +226,18 @@ export default function DebtScreen() {
         {hasDebt && (
           <View className="mb-6">
             {debts.map((debt, index) => (
-              <View key={index} className="bg-white rounded-2xl p-4 mb-3">
+              <View key={index} style={{ ...cardStyle, marginBottom: 12 }}>
                 <View className="flex-row items-center justify-between mb-2">
-                  <Text className="text-black font-bold text-lg">
+                  <Text className="text-white font-bold text-lg">
                     {debt.debtType}
                   </Text>
                   <View className="flex-row gap-3">
                     <TouchableOpacity onPress={() => handleEdit(index)}>
-                      <Ionicons name="pencil" size={20} color="#000" />
+                      <Ionicons
+                        name="pencil"
+                        size={20}
+                        color={SettingsAccent}
+                      />
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => handleRemove(index)}>
                       <Ionicons
@@ -203,14 +248,14 @@ export default function DebtScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
-                <Text className="text-black opacity-60">
+                <Text style={{ color: SettingsAccent, opacity: 0.9 }}>
                   Balance: ${debt.balance.toFixed(2)}
                 </Text>
-                <Text className="text-black opacity-60">
+                <Text style={{ color: SettingsAccent, opacity: 0.9 }}>
                   Min Payment: ${debt.minPaymentMonthly.toFixed(2)}/month
                 </Text>
                 {debt.payoffGoal && (
-                  <Text className="text-black opacity-60">
+                  <Text style={{ color: SettingsAccent, opacity: 0.9 }}>
                     Goal: {debt.payoffGoal}
                   </Text>
                 )}
@@ -223,27 +268,62 @@ export default function DebtScreen() {
                 setEditingIndex(null);
                 setShowAddModal(true);
               }}
-              className="bg-gray-800 rounded-2xl p-4 items-center"
+              style={{
+                ...cardStyle,
+                alignItems: "center",
+              }}
             >
-              <Text className="text-white text-lg font-semibold">Add Debt</Text>
+              <Text
+                style={{
+                  color: SettingsAccent,
+                  fontSize: 18,
+                  fontWeight: "600",
+                }}
+              >
+                Add Debt
+              </Text>
             </TouchableOpacity>
           </View>
         )}
 
-        <View className="flex-row gap-3 mb-8">
-          <TouchableOpacity
-            onPress={() => router.push("/onboarding/summary")}
-            className="flex-1 bg-gray-800 rounded-2xl p-4 items-center"
-          >
-            <Text className="text-white text-lg font-semibold">Skip</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleContinue}
-            className="flex-1 bg-white rounded-2xl p-4 items-center"
-          >
-            <Text className="text-black text-lg font-bold">Continue</Text>
-          </TouchableOpacity>
-        </View>
+        {!isEditMode && (
+          <View className="flex-row gap-3 mb-8">
+            <TouchableOpacity
+              onPress={() => router.push("/onboarding/summary")}
+              style={{
+                flex: 1,
+                borderRadius: 16,
+                padding: 16,
+                alignItems: "center",
+                borderWidth: 2,
+                borderColor: SettingsAccent,
+                backgroundColor: "transparent",
+              }}
+            >
+              <Text
+                style={{
+                  color: SettingsAccent,
+                  fontSize: 18,
+                  fontWeight: "600",
+                }}
+              >
+                Skip
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleContinue}
+              style={{
+                flex: 1,
+                backgroundColor: SettingsAccent,
+                borderRadius: 16,
+                padding: 16,
+                alignItems: "center",
+              }}
+            >
+              <Text className="text-black text-lg font-bold">Continue</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       <Modal
@@ -255,8 +335,18 @@ export default function DebtScreen() {
           resetForm();
         }}
       >
-        <View className="flex-1 bg-black/50 justify-end">
-          <ScrollView className="bg-black rounded-t-3xl p-6 max-h-[80%]">
+        <View className="flex-1 bg-black/60 justify-end">
+          <ScrollView
+            style={{
+              backgroundColor: "#111",
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 24,
+              maxHeight: "80%",
+              borderTopWidth: 2,
+              borderColor: SettingsAccent,
+            }}
+          >
             <Text className="text-white text-xl font-bold mb-4">
               {editingIndex !== null ? "Edit Debt" : "Add Debt"}
             </Text>
@@ -269,14 +359,20 @@ export default function DebtScreen() {
                     <TouchableOpacity
                       key={type}
                       onPress={() => setDebtType(type)}
-                      className={`rounded-xl px-4 py-2 ${
-                        debtType === type ? "bg-white" : "bg-gray-800"
-                      }`}
+                      style={{
+                        borderRadius: 12,
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        backgroundColor:
+                          debtType === type ? SettingsAccent : "transparent",
+                        borderWidth: 2,
+                        borderColor: SettingsAccent,
+                      }}
                     >
                       <Text
-                        className={
-                          debtType === type ? "text-black" : "text-white"
-                        }
+                        style={{
+                          color: debtType === type ? "#000" : "#fff",
+                        }}
                       >
                         {type}
                       </Text>
@@ -288,28 +384,28 @@ export default function DebtScreen() {
 
             <View className="mb-4">
               <Text className="text-white mb-2">Balance *</Text>
-              <View className="bg-white rounded-2xl p-4">
+              <View style={inputStyle}>
                 <TextInput
                   value={balance}
                   onChangeText={setBalance}
                   placeholder="0.00"
                   keyboardType="numeric"
-                  style={{ color: "#000" }}
-                  placeholderTextColor="#999"
+                  style={{ color: "#fff" }}
+                  placeholderTextColor="rgba(255,255,255,0.5)"
                 />
               </View>
             </View>
 
             <View className="mb-4">
               <Text className="text-white mb-2">Min Payment Monthly *</Text>
-              <View className="bg-white rounded-2xl p-4">
+              <View style={inputStyle}>
                 <TextInput
                   value={minPayment}
                   onChangeText={setMinPayment}
                   placeholder="0.00"
                   keyboardType="numeric"
-                  style={{ color: "#000" }}
-                  placeholderTextColor="#999"
+                  style={{ color: "#fff" }}
+                  placeholderTextColor="rgba(255,255,255,0.5)"
                 />
               </View>
             </View>
@@ -318,14 +414,14 @@ export default function DebtScreen() {
               <Text className="text-white mb-2">
                 Due Day of Month (Optional)
               </Text>
-              <View className="bg-white rounded-2xl p-4">
+              <View style={inputStyle}>
                 <TextInput
                   value={dueDay}
                   onChangeText={setDueDay}
                   placeholder="1-28"
                   keyboardType="numeric"
-                  style={{ color: "#000" }}
-                  placeholderTextColor="#999"
+                  style={{ color: "#fff" }}
+                  placeholderTextColor="rgba(255,255,255,0.5)"
                 />
               </View>
             </View>
@@ -337,14 +433,20 @@ export default function DebtScreen() {
                   <TouchableOpacity
                     key={goal}
                     onPress={() => setPayoffGoal(goal)}
-                    className={`rounded-xl px-4 py-2 ${
-                      payoffGoal === goal ? "bg-white" : "bg-gray-800"
-                    }`}
+                    style={{
+                      borderRadius: 12,
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                      backgroundColor:
+                        payoffGoal === goal ? SettingsAccent : "transparent",
+                      borderWidth: 2,
+                      borderColor: SettingsAccent,
+                    }}
                   >
                     <Text
-                      className={
-                        payoffGoal === goal ? "text-black" : "text-white"
-                      }
+                      style={{
+                        color: payoffGoal === goal ? "#000" : "#fff",
+                      }}
                     >
                       {goal === "customDate" ? "Custom Date" : goal}
                     </Text>
@@ -358,9 +460,9 @@ export default function DebtScreen() {
                 <Text className="text-white mb-2">Custom Payoff Date</Text>
                 <TouchableOpacity
                   onPress={() => setShowDatePicker(true)}
-                  className="bg-white rounded-2xl p-4"
+                  style={inputStyle}
                 >
-                  <Text className="text-black">
+                  <Text style={{ color: "#fff" }}>
                     {customPayoffDate.toLocaleDateString()}
                   </Text>
                 </TouchableOpacity>
@@ -387,13 +489,29 @@ export default function DebtScreen() {
                   setShowAddModal(false);
                   resetForm();
                 }}
-                className="flex-1 bg-gray-800 rounded-2xl p-4 items-center"
+                style={{
+                  flex: 1,
+                  borderRadius: 16,
+                  padding: 16,
+                  alignItems: "center",
+                  borderWidth: 2,
+                  borderColor: SettingsAccent,
+                  backgroundColor: "transparent",
+                }}
               >
-                <Text className="text-white font-semibold">Cancel</Text>
+                <Text style={{ color: SettingsAccent, fontWeight: "600" }}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleAddDebt}
-                className="flex-1 bg-white rounded-2xl p-4 items-center"
+                style={{
+                  flex: 1,
+                  backgroundColor: SettingsAccent,
+                  borderRadius: 16,
+                  padding: 16,
+                  alignItems: "center",
+                }}
               >
                 <Text className="text-black font-semibold">Save</Text>
               </TouchableOpacity>

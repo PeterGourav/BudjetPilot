@@ -1,15 +1,10 @@
-import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import {
-  getIncomeData,
-  getFixedExpenses,
-  getSubscriptions,
-  getFlexibleSpending,
-  getSavingsGoal,
-  getDebts,
-} from '@/services/database';
+    getIncomeData
+} from "@/services/database";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 
 export default function SettingsScreen() {
   const [hasData, setHasData] = useState(false);
@@ -25,40 +20,40 @@ export default function SettingsScreen() {
 
   const settingsItems = [
     {
-      title: 'Income',
-      icon: 'cash-outline',
-      route: '/onboarding/income?mode=edit',
-      description: 'Edit your income details',
+      title: "Income",
+      icon: "cash-outline",
+      route: "/onboarding/income?mode=edit",
+      description: "Edit your income details",
     },
     {
-      title: 'Fixed Expenses',
-      icon: 'home-outline',
-      route: '/onboarding/fixed?mode=edit',
-      description: 'Rent, utilities, and bills',
+      title: "Fixed Expenses",
+      icon: "home-outline",
+      route: "/onboarding/fixed?mode=edit",
+      description: "Rent, utilities, and bills",
     },
     {
-      title: 'Subscriptions',
-      icon: 'card-outline',
-      route: '/onboarding/subscriptions?mode=edit',
-      description: 'Monthly subscriptions',
+      title: "Subscriptions",
+      icon: "card-outline",
+      route: "/onboarding/subscriptions?mode=edit",
+      description: "Monthly subscriptions",
     },
     {
-      title: 'Flexible Spending',
-      icon: 'wallet-outline',
-      route: '/onboarding/flexible?mode=edit',
-      description: 'Spending category caps',
+      title: "Flexible Spending",
+      icon: "wallet-outline",
+      route: "/onboarding/flexible?mode=edit",
+      description: "Spending category caps",
     },
     {
-      title: 'Savings Goals',
-      icon: 'trending-up-outline',
-      route: '/onboarding/savings?mode=edit',
-      description: 'Your savings plan',
+      title: "Savings Goals",
+      icon: "trending-up-outline",
+      route: "/onboarding/savings?mode=edit",
+      description: "Your savings plan",
     },
     {
-      title: 'Debt Management',
-      icon: 'card-outline',
-      route: '/onboarding/debt?mode=edit',
-      description: 'Debts and payoff goals',
+      title: "Debt Management",
+      icon: "card-outline",
+      route: "/onboarding/debt?mode=edit",
+      description: "Debts and payoff goals",
     },
   ];
 
@@ -84,7 +79,9 @@ export default function SettingsScreen() {
                   <Ionicons name={item.icon as any} size={24} color="#000" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-black font-bold text-lg">{item.title}</Text>
+                  <Text className="text-black font-bold text-lg">
+                    {item.title}
+                  </Text>
                   <Text className="text-black opacity-60 text-sm mt-1">
                     {item.description}
                   </Text>
@@ -97,10 +94,12 @@ export default function SettingsScreen() {
 
         <View className="mt-6 mb-8">
           <TouchableOpacity
-            onPress={() => router.push('/onboarding/summary')}
+            onPress={() => router.push("/onboarding/summary?from=settings")}
             className="bg-gray-800 rounded-2xl p-4 items-center"
           >
-            <Text className="text-white font-semibold text-lg">View Budget Summary</Text>
+            <Text className="text-white font-semibold text-lg">
+              View Budget Summary
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

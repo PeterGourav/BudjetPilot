@@ -1,19 +1,20 @@
+import { SettingsAccent } from "@/constants/theme";
 import { useBudgetContext } from "@/hooks/BudgetContext";
 import {
-  getSubscriptions,
-  saveSubscriptions,
-  type Subscription,
+    getSubscriptions,
+    saveSubscriptions,
+    type Subscription,
 } from "@/services/database";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  Modal,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Modal,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 const QUICK_PICKS = [
@@ -25,6 +26,19 @@ const QUICK_PICKS = [
   { name: "Gaming subscription", defaultAmount: 9.99 },
   { name: "Other", defaultAmount: 0 },
 ];
+
+function buildSubsList(
+  selectedSubs: Record<string, number>,
+  customSubs: Subscription[],
+): Subscription[] {
+  return [
+    ...Object.entries(selectedSubs).map(([name, amount]) => ({
+      name,
+      amountMonthly: amount,
+    })),
+    ...customSubs,
+  ];
+}
 
 export default function SubscriptionsScreen() {
   const params = useLocalSearchParams();
@@ -45,10 +59,8 @@ export default function SubscriptionsScreen() {
   const loadExistingData = async () => {
     const existing = await getSubscriptions();
     if (existing && existing.length > 0) {
-      // Load existing subscriptions
       const subsMap: Record<string, number> = {};
       const custom: Subscription[] = [];
-
       existing.forEach((sub) => {
         const quickPick = QUICK_PICKS.find((p) => p.name === sub.name);
         if (quickPick) {
@@ -57,53 +69,81 @@ export default function SubscriptionsScreen() {
           custom.push(sub);
         }
       });
-
       setSelectedSubs(subsMap);
       setCustomSubs(custom);
     }
   };
 
+  const saveAndRefresh = useCallback(
+    async (subs: Subscription[]) => {
+      await saveSubscriptions(subs);
+      await refresh();
+    },
+    [refresh],
+  );
+
   const toggleSubscription = (name: string, defaultAmount: number) => {
+    let updated: Record<string, number>;
     if (selectedSubs[name] !== undefined) {
-      const updated = { ...selectedSubs };
+      updated = { ...selectedSubs };
       delete updated[name];
-      setSelectedSubs(updated);
     } else {
-      setSelectedSubs({ ...selectedSubs, [name]: defaultAmount });
+      updated = { ...selectedSubs, [name]: defaultAmount };
+    }
+    setSelectedSubs(updated);
+    if (isEditMode) {
+      const list = buildSubsList(updated, customSubs);
+      saveAndRefresh(list);
     }
   };
 
   const updateAmount = (name: string, amount: number) => {
-    setSelectedSubs({ ...selectedSubs, [name]: amount });
+    const updated = { ...selectedSubs, [name]: amount };
+    setSelectedSubs(updated);
+    if (isEditMode) {
+      const list = buildSubsList(updated, customSubs);
+      saveAndRefresh(list);
+    }
   };
 
   const addCustomSubscription = () => {
     if (customName && customAmount) {
-      setCustomSubs([
+      const newCustom = [
         ...customSubs,
         { name: customName, amountMonthly: parseFloat(customAmount) || 0 },
-      ]);
+      ];
+      setCustomSubs(newCustom);
       setCustomName("");
       setCustomAmount("");
       setShowCustomModal(false);
+      if (isEditMode) {
+        const list = buildSubsList(selectedSubs, newCustom);
+        saveAndRefresh(list);
+      }
     }
   };
 
   const handleContinue = async () => {
-    const subscriptions: Subscription[] = [
-      ...Object.entries(selectedSubs).map(([name, amount]) => ({
-        name,
-        amountMonthly: amount,
-      })),
-      ...customSubs,
-    ];
+    const subscriptions = buildSubsList(selectedSubs, customSubs);
     await saveSubscriptions(subscriptions);
     await refresh();
-    if (isEditMode) {
-      router.back();
-    } else {
-      router.push("/onboarding/flexible");
-    }
+    router.push("/onboarding/flexible");
+  };
+
+  const cardStyle = {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: SettingsAccent,
+    backgroundColor: "transparent" as const,
+  };
+
+  const inputStyle = {
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 2,
+    borderColor: SettingsAccent,
+    backgroundColor: "rgba(34, 197, 94, 0.1)" as const,
   };
 
   return (
@@ -129,29 +169,38 @@ export default function SubscriptionsScreen() {
 
         <View className="gap-3 mb-6">
           {QUICK_PICKS.map((pick) => (
-            <View key={pick.name} className="bg-white rounded-2xl p-4">
+            <View key={pick.name} style={cardStyle}>
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-black font-semibold">{pick.name}</Text>
+                <Text className="text-white font-semibold">{pick.name}</Text>
                 <TouchableOpacity
                   onPress={() =>
                     toggleSubscription(pick.name, pick.defaultAmount)
                   }
-                  className={`w-6 h-6 rounded border-2 ${
-                    selectedSubs[pick.name] !== undefined
-                      ? "bg-black border-black"
-                      : "border-gray-400"
-                  }`}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    borderWidth: 2,
+                    borderColor:
+                      selectedSubs[pick.name] !== undefined
+                        ? SettingsAccent
+                        : "rgba(255,255,255,0.4)",
+                    backgroundColor:
+                      selectedSubs[pick.name] !== undefined
+                        ? SettingsAccent
+                        : "transparent",
+                  }}
                 >
                   {selectedSubs[pick.name] !== undefined && (
                     <View className="w-full h-full items-center justify-center">
-                      <Text className="text-white text-xs">✓</Text>
+                      <Text className="text-black text-xs">✓</Text>
                     </View>
                   )}
                 </TouchableOpacity>
               </View>
 
               {selectedSubs[pick.name] !== undefined && (
-                <View className="bg-gray-100 rounded-xl p-3 mt-2">
+                <View style={inputStyle} className="mt-2">
                   <TextInput
                     value={selectedSubs[pick.name]?.toString() || ""}
                     onChangeText={(text) =>
@@ -159,8 +208,8 @@ export default function SubscriptionsScreen() {
                     }
                     placeholder="0.00"
                     keyboardType="numeric"
-                    style={{ color: "#000", fontSize: 18 }}
-                    placeholderTextColor="#999"
+                    style={{ color: SettingsAccent, fontSize: 18 }}
+                    placeholderTextColor="rgba(34, 197, 94, 0.5)"
                   />
                 </View>
               )}
@@ -174,9 +223,9 @@ export default function SubscriptionsScreen() {
               Custom Subscriptions
             </Text>
             {customSubs.map((sub, index) => (
-              <View key={index} className="bg-white rounded-2xl p-4 mb-3">
-                <Text className="text-black font-semibold">{sub.name}</Text>
-                <Text className="text-black opacity-60">
+              <View key={index} style={{ ...cardStyle, marginBottom: 12 }}>
+                <Text className="text-white font-semibold">{sub.name}</Text>
+                <Text style={{ color: SettingsAccent, opacity: 0.9 }}>
                   ${sub.amountMonthly.toFixed(2)}/month
                 </Text>
               </View>
@@ -186,27 +235,57 @@ export default function SubscriptionsScreen() {
 
         <TouchableOpacity
           onPress={() => setShowCustomModal(true)}
-          className="bg-gray-800 rounded-2xl p-4 items-center mb-6"
+          style={{
+            ...cardStyle,
+            alignItems: "center",
+            marginBottom: 24,
+          }}
         >
-          <Text className="text-white text-lg font-semibold">
+          <Text
+            style={{ color: SettingsAccent, fontSize: 18, fontWeight: "600" }}
+          >
             Add subscription
           </Text>
         </TouchableOpacity>
 
-        <View className="flex-row gap-3 mb-8">
-          <TouchableOpacity
-            onPress={() => router.push("/onboarding/flexible")}
-            className="flex-1 bg-gray-800 rounded-2xl p-4 items-center"
-          >
-            <Text className="text-white text-lg font-semibold">Skip</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleContinue}
-            className="flex-1 bg-white rounded-2xl p-4 items-center"
-          >
-            <Text className="text-black text-lg font-bold">Continue</Text>
-          </TouchableOpacity>
-        </View>
+        {!isEditMode && (
+          <View className="flex-row gap-3 mb-8">
+            <TouchableOpacity
+              onPress={() => router.push("/onboarding/flexible")}
+              style={{
+                flex: 1,
+                borderRadius: 16,
+                padding: 16,
+                alignItems: "center",
+                borderWidth: 2,
+                borderColor: SettingsAccent,
+                backgroundColor: "transparent",
+              }}
+            >
+              <Text
+                style={{
+                  color: SettingsAccent,
+                  fontSize: 18,
+                  fontWeight: "600",
+                }}
+              >
+                Skip
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleContinue}
+              style={{
+                flex: 1,
+                backgroundColor: SettingsAccent,
+                borderRadius: 16,
+                padding: 16,
+                alignItems: "center",
+              }}
+            >
+              <Text className="text-black text-lg font-bold">Continue</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       <Modal
@@ -215,47 +294,72 @@ export default function SubscriptionsScreen() {
         animationType="slide"
         onRequestClose={() => setShowCustomModal(false)}
       >
-        <View className="flex-1 bg-black/50 justify-end">
-          <View className="bg-black rounded-t-3xl p-6">
+        <View className="flex-1 bg-black/60 justify-end">
+          <View
+            style={{
+              backgroundColor: "#111",
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 24,
+              borderTopWidth: 2,
+              borderColor: SettingsAccent,
+            }}
+          >
             <Text className="text-white text-xl font-bold mb-4">
               Add Subscription
             </Text>
             <View className="mb-4">
               <Text className="text-white mb-2">Name</Text>
-              <View className="bg-white rounded-2xl p-4">
+              <View style={inputStyle}>
                 <TextInput
                   value={customName}
                   onChangeText={setCustomName}
                   placeholder="Subscription name"
-                  style={{ color: "#000" }}
-                  placeholderTextColor="#999"
+                  style={{ color: "#fff" }}
+                  placeholderTextColor="rgba(255,255,255,0.5)"
                   autoFocus
                 />
               </View>
             </View>
             <View className="mb-4">
               <Text className="text-white mb-2">Monthly Amount</Text>
-              <View className="bg-white rounded-2xl p-4">
+              <View style={inputStyle}>
                 <TextInput
                   value={customAmount}
                   onChangeText={setCustomAmount}
                   placeholder="0.00"
                   keyboardType="numeric"
-                  style={{ color: "#000" }}
-                  placeholderTextColor="#999"
+                  style={{ color: "#fff" }}
+                  placeholderTextColor="rgba(255,255,255,0.5)"
                 />
               </View>
             </View>
             <View className="flex-row gap-3">
               <TouchableOpacity
                 onPress={() => setShowCustomModal(false)}
-                className="flex-1 bg-gray-800 rounded-2xl p-4 items-center"
+                style={{
+                  flex: 1,
+                  borderRadius: 16,
+                  padding: 16,
+                  alignItems: "center",
+                  borderWidth: 2,
+                  borderColor: SettingsAccent,
+                  backgroundColor: "transparent",
+                }}
               >
-                <Text className="text-white font-semibold">Cancel</Text>
+                <Text style={{ color: SettingsAccent, fontWeight: "600" }}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={addCustomSubscription}
-                className="flex-1 bg-white rounded-2xl p-4 items-center"
+                style={{
+                  flex: 1,
+                  backgroundColor: SettingsAccent,
+                  borderRadius: 16,
+                  padding: 16,
+                  alignItems: "center",
+                }}
               >
                 <Text className="text-black font-semibold">Add</Text>
               </TouchableOpacity>

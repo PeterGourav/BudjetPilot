@@ -1,19 +1,30 @@
-import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { SettingsAccent } from "@/constants/theme";
+import type { IncomeData } from "@/services/database";
 import {
-  getAllOnboardingData,
-  getIncomeData,
-  getFixedExpenses,
-  getSubscriptions,
-  getFlexibleSpending,
-  getSavingsGoal,
-  getDebts,
-  setOnboardingCompleted,
-} from '@/services/database';
-import type { IncomeData } from '@/services/database';
+    getDebts,
+    getFixedExpenses,
+    getFlexibleSpending,
+    getIncomeData,
+    getSavingsGoal,
+    getSubscriptions,
+    setOnboardingCompleted,
+} from "@/services/database";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+
+const cardStyle = {
+  borderRadius: 16,
+  padding: 16,
+  borderWidth: 2,
+  borderColor: SettingsAccent,
+  backgroundColor: "transparent" as const,
+};
 
 export default function SummaryScreen() {
+  const params = useLocalSearchParams<{ from?: string }>();
+  const fromSettings = params.from === "settings";
+
   const [income, setIncome] = useState<IncomeData | null>(null);
   const [totalFixed, setTotalFixed] = useState(0);
   const [totalSubscriptions, setTotalSubscriptions] = useState(0);
@@ -32,29 +43,29 @@ export default function SummaryScreen() {
   }, []);
 
   const loadSummary = async () => {
-    const [incomeData, fixed, subs, flexible, savings, debts] = await Promise.all([
-      getIncomeData(),
-      getFixedExpenses(),
-      getSubscriptions(),
-      getFlexibleSpending(),
-      getSavingsGoal(),
-      getDebts(),
-    ]);
+    const [incomeData, fixed, subs, flexible, savings, debts] =
+      await Promise.all([
+        getIncomeData(),
+        getFixedExpenses(),
+        getSubscriptions(),
+        getFlexibleSpending(),
+        getSavingsGoal(),
+        getDebts(),
+      ]);
 
     setIncome(incomeData);
 
     if (!incomeData) return;
 
-    // Calculate monthly income
     let monthly = 0;
     switch (incomeData.payFrequency) {
-      case 'weekly':
+      case "weekly":
         monthly = incomeData.netPayAmount * 4.33;
         break;
-      case 'biweekly':
+      case "biweekly":
         monthly = incomeData.netPayAmount * 2.17;
         break;
-      case 'monthly':
+      case "monthly":
         monthly = incomeData.netPayAmount;
         break;
     }
@@ -63,7 +74,6 @@ export default function SummaryScreen() {
     }
     setMonthlyIncome(monthly);
 
-    // Calculate totals
     const fixedTotal = fixed
       .filter((e) => e.enabled)
       .reduce((sum, e) => sum + e.amountMonthly, 0);
@@ -87,7 +97,7 @@ export default function SummaryScreen() {
 
     let savingsTotal = 0;
     if (savings?.enabled && savings.savingsValue) {
-      if (savings.savingsMode === 'percent') {
+      if (savings.savingsMode === "percent") {
         savingsTotal = (monthly * savings.savingsValue) / 100;
       } else {
         savingsTotal = savings.savingsValue;
@@ -98,8 +108,8 @@ export default function SummaryScreen() {
     const debtTotal = debts.reduce((sum, d) => sum + d.minPaymentMonthly, 0);
     setTotalDebt(debtTotal);
 
-    // Check if over budget
-    const totalExpenses = fixedTotal + subsTotal + flexibleTotal + savingsTotal + debtTotal;
+    const totalExpenses =
+      fixedTotal + subsTotal + flexibleTotal + savingsTotal + debtTotal;
     if (totalExpenses > monthly) {
       setIsOverBudget(true);
       setShortfall(totalExpenses - monthly);
@@ -107,7 +117,6 @@ export default function SummaryScreen() {
       setIsOverBudget(false);
     }
 
-    // Calculate safe to spend
     const nextPay = new Date(incomeData.nextPayDate);
     setNextPayDate(nextPay);
 
@@ -115,29 +124,21 @@ export default function SummaryScreen() {
     today.setHours(0, 0, 0, 0);
     const daysUntilPay = Math.max(
       1,
-      Math.ceil((nextPay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      Math.ceil((nextPay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)),
     );
 
-    // Calculate available after essentials (fixed, subscriptions, savings, debt)
     const essentialTotal = fixedTotal + subsTotal + savingsTotal + debtTotal;
     const availableForFlexible = monthly - essentialTotal;
-    
-    // Calculate daily budget (available flexible / days in month)
-    const daysInMonth = 30.44; // Average days per month
+    const daysInMonth = 30.44;
     const dailyBudget = availableForFlexible / daysInMonth;
-    
-    // Total available for the remaining period
     const totalForPeriod = dailyBudget * daysUntilPay;
-    
-    // Safe to spend today (can be the daily budget or remaining for period, whichever is less)
-    // For simplicity, show remaining for period as "today"
     setSafeToSpendToday(Math.max(0, totalForPeriod));
     setSafeToSpendPerDay(Math.max(0, dailyBudget));
   };
 
   const handleFinish = async () => {
     await setOnboardingCompleted(true);
-    router.replace('/(tabs)');
+    router.replace("/(tabs)");
   };
 
   const handleAdjust = (screen: string) => {
@@ -150,95 +151,193 @@ export default function SummaryScreen() {
         <Text className="text-white text-2xl font-bold mb-2">Summary</Text>
         <Text className="text-white opacity-60 mb-6">Review your setup</Text>
 
-        {/* Income Summary */}
-        <View className="bg-white rounded-2xl p-4 mb-4">
-          <Text className="text-black font-semibold mb-2">Income per period</Text>
-          <Text className="text-black text-2xl font-bold">
-            ${income?.netPayAmount.toFixed(2) || '0.00'}
+        <View style={{ ...cardStyle, marginBottom: 16 }}>
+          <Text className="text-white font-semibold mb-1">
+            Income per period
           </Text>
-          <Text className="text-black opacity-60">
-            {income?.payFrequency || 'monthly'} • ~${monthlyIncome.toFixed(2)}/month
+          <Text className="text-white opacity-60 mb-1">
+            {income?.payFrequency || "monthly"} • ~$
+            {monthlyIncome.toFixed(2)}/month
+          </Text>
+          <Text
+            style={{ color: SettingsAccent, fontSize: 24, fontWeight: "bold" }}
+          >
+            ${income?.netPayAmount.toFixed(2) || "0.00"}
           </Text>
         </View>
 
-        {/* Expenses Breakdown */}
         <View className="gap-3 mb-4">
-          <View className="bg-white rounded-2xl p-4">
-            <Text className="text-black font-semibold">Total Fixed Monthly</Text>
-            <Text className="text-black text-xl font-bold">${totalFixed.toFixed(2)}</Text>
+          <View style={cardStyle}>
+            <Text className="text-white font-semibold">
+              Total Fixed Monthly
+            </Text>
+            <Text
+              style={{
+                color: SettingsAccent,
+                fontSize: 20,
+                fontWeight: "bold",
+              }}
+            >
+              ${totalFixed.toFixed(2)}
+            </Text>
           </View>
 
-          <View className="bg-white rounded-2xl p-4">
-            <Text className="text-black font-semibold">Subscriptions Monthly</Text>
-            <Text className="text-black text-xl font-bold">${totalSubscriptions.toFixed(2)}</Text>
+          <View style={cardStyle}>
+            <Text className="text-white font-semibold">
+              Subscription Monthly
+            </Text>
+            <Text
+              style={{
+                color: SettingsAccent,
+                fontSize: 20,
+                fontWeight: "bold",
+              }}
+            >
+              ${totalSubscriptions.toFixed(2)}
+            </Text>
           </View>
 
-          <View className="bg-white rounded-2xl p-4">
-            <Text className="text-black font-semibold">Flexible Caps Monthly</Text>
-            <Text className="text-black text-xl font-bold">${totalFlexible.toFixed(2)}</Text>
+          <View style={cardStyle}>
+            <Text className="text-white font-semibold">
+              Flexible Caps Monthly
+            </Text>
+            <Text
+              style={{
+                color: SettingsAccent,
+                fontSize: 20,
+                fontWeight: "bold",
+              }}
+            >
+              ${totalFlexible.toFixed(2)}
+            </Text>
           </View>
 
-          <View className="bg-white rounded-2xl p-4">
-            <Text className="text-black font-semibold">Savings Monthly</Text>
-            <Text className="text-black text-xl font-bold">${totalSavings.toFixed(2)}</Text>
+          <View style={cardStyle}>
+            <Text className="text-white font-semibold">Saving Monthly</Text>
+            <Text
+              style={{
+                color: SettingsAccent,
+                fontSize: 20,
+                fontWeight: "bold",
+              }}
+            >
+              ${totalSavings.toFixed(2)}
+            </Text>
           </View>
 
-          <View className="bg-white rounded-2xl p-4">
-            <Text className="text-black font-semibold">Debt Monthly</Text>
-            <Text className="text-black text-xl font-bold">${totalDebt.toFixed(2)}</Text>
+          <View style={cardStyle}>
+            <Text className="text-white font-semibold">Debt Monthly</Text>
+            <Text
+              style={{
+                color: SettingsAccent,
+                fontSize: 20,
+                fontWeight: "bold",
+              }}
+            >
+              ${totalDebt.toFixed(2)}
+            </Text>
           </View>
         </View>
 
-        {/* Over Budget Warning */}
         {isOverBudget && (
-          <View className="bg-red-500 rounded-2xl p-4 mb-4">
+          <View
+            style={{
+              backgroundColor: "rgba(239, 68, 68, 0.2)",
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 16,
+              borderWidth: 2,
+              borderColor: "#ef4444",
+            }}
+          >
             <Text className="text-white font-bold text-lg mb-2">
               You're short by ${shortfall.toFixed(2)}/month
             </Text>
             <View className="gap-2 mt-3">
               <TouchableOpacity
-                onPress={() => handleAdjust('savings')}
-                className="bg-white rounded-xl p-3"
+                onPress={() => handleAdjust("savings")}
+                style={{
+                  backgroundColor: SettingsAccent,
+                  borderRadius: 12,
+                  padding: 12,
+                }}
               >
-                <Text className="text-black font-semibold text-center">Reduce savings</Text>
+                <Text className="text-black font-semibold text-center">
+                  Reduce savings
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => handleAdjust('debt')}
-                className="bg-white rounded-xl p-3"
+                onPress={() => handleAdjust("debt")}
+                style={{
+                  backgroundColor: SettingsAccent,
+                  borderRadius: 12,
+                  padding: 12,
+                }}
               >
-                <Text className="text-black font-semibold text-center">Adjust debt goal</Text>
+                <Text className="text-black font-semibold text-center">
+                  Adjust debt goal
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => handleAdjust('flexible')}
-                className="bg-white rounded-xl p-3"
+                onPress={() => handleAdjust("flexible")}
+                style={{
+                  backgroundColor: SettingsAccent,
+                  borderRadius: 12,
+                  padding: 12,
+                }}
               >
-                <Text className="text-black font-semibold text-center">Lower flexible caps</Text>
+                <Text className="text-black font-semibold text-center">
+                  Lower flexible caps
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* Daily Number Cards */}
         <View className="mb-4">
-          <Text className="text-white text-xl font-bold mb-3">Your Daily Number</Text>
-          <View className="bg-white rounded-2xl p-4 mb-3">
-            <Text className="text-black font-semibold mb-2">Safe to spend today</Text>
-            <Text className="text-black text-4xl font-extrabold">
+          <Text className="text-white text-xl font-bold mb-3">
+            Your Daily Number
+          </Text>
+          <View style={{ ...cardStyle, marginBottom: 12 }}>
+            <Text className="text-white font-semibold mb-2">
+              Safe to spend today
+            </Text>
+            <Text
+              style={{
+                color: SettingsAccent,
+                fontSize: 28,
+                fontWeight: "bold",
+              }}
+            >
               ${safeToSpendToday.toFixed(2)}
             </Text>
           </View>
 
-          <View className="bg-white rounded-2xl p-4 mb-3">
-            <Text className="text-black font-semibold mb-2">Safe to spend per day until payday</Text>
-            <Text className="text-black text-4xl font-extrabold">
+          <View style={{ ...cardStyle, marginBottom: 12 }}>
+            <Text className="text-white font-semibold mb-2">
+              Safe to spend per day until payday
+            </Text>
+            <Text
+              style={{
+                color: SettingsAccent,
+                fontSize: 28,
+                fontWeight: "bold",
+              }}
+            >
               ${safeToSpendPerDay.toFixed(2)}/day
             </Text>
           </View>
 
           {nextPayDate && (
-            <View className="bg-white rounded-2xl p-4">
-              <Text className="text-black font-semibold">Next payday</Text>
-              <Text className="text-black text-xl font-bold">
+            <View style={cardStyle}>
+              <Text className="text-white font-semibold">Next payday</Text>
+              <Text
+                style={{
+                  color: SettingsAccent,
+                  fontSize: 20,
+                  fontWeight: "bold",
+                }}
+              >
                 {nextPayDate.toLocaleDateString()}
               </Text>
             </View>
@@ -248,16 +347,36 @@ export default function SummaryScreen() {
         <View className="flex-row gap-3 mb-8">
           <TouchableOpacity
             onPress={() => router.back()}
-            className="flex-1 bg-gray-800 rounded-2xl p-4 items-center"
+            style={{
+              flex: 1,
+              borderRadius: 16,
+              padding: 16,
+              alignItems: "center",
+              borderWidth: 2,
+              borderColor: SettingsAccent,
+              backgroundColor: "transparent",
+            }}
           >
-            <Text className="text-white font-semibold">Edit later</Text>
+            <Text
+              style={{ color: SettingsAccent, fontSize: 18, fontWeight: "600" }}
+            >
+              {fromSettings ? "Back" : "Edit later"}
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleFinish}
-            className="flex-1 bg-white rounded-2xl p-4 items-center"
-          >
-            <Text className="text-black font-bold">Finish Setup</Text>
-          </TouchableOpacity>
+          {!fromSettings && (
+            <TouchableOpacity
+              onPress={handleFinish}
+              style={{
+                flex: 1,
+                backgroundColor: SettingsAccent,
+                borderRadius: 16,
+                padding: 16,
+                alignItems: "center",
+              }}
+            >
+              <Text className="text-black text-lg font-bold">Finish Setup</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </View>
