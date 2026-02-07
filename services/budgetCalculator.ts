@@ -4,13 +4,14 @@
  */
 
 import type {
-    Debt,
-    FixedExpense,
-    FlexibleSpending,
-    IncomeData,
-    SavingsGoal,
-    Subscription,
+  Debt,
+  FixedExpense,
+  FlexibleSpending,
+  IncomeData,
+  SavingsGoal,
+  Subscription,
 } from "./database";
+import { getNextPayDateFromIncome } from "./database";
 
 export interface BudgetCalculation {
   feasible: boolean;
@@ -31,25 +32,18 @@ export interface BudgetCalculation {
 }
 
 /**
- * Normalize income to monthly amount
+ * Normalize income to monthly amount (biweekly or monthly only).
  */
 function normalizeIncomeToMonthly(
-  payFrequency: "weekly" | "biweekly" | "monthly",
+  payFrequency: "biweekly" | "monthly",
   netPayAmount: number,
   irregularMonthlyAvg: number = 0,
   irregularReliability: "low" | "medium" | "high" = "medium",
 ): number {
-  // Base income normalization
-  let baseMonthly: number;
-  if (payFrequency === "weekly") {
-    baseMonthly = (netPayAmount * 52) / 12;
-  } else if (payFrequency === "biweekly") {
-    baseMonthly = (netPayAmount * 26) / 12;
-  } else if (payFrequency === "monthly") {
-    baseMonthly = netPayAmount;
-  } else {
-    throw new Error(`Unknown pay frequency: ${payFrequency}`);
-  }
+  const baseMonthly =
+    payFrequency === "biweekly"
+      ? (netPayAmount * 26) / 12
+      : netPayAmount;
 
   // Add irregular income with reliability adjustment
   const reliabilityMultiplier =
@@ -128,7 +122,7 @@ export async function calculateBudget(
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const nextPayDate = new Date(income.nextPayDate);
+  const nextPayDate = getNextPayDateFromIncome(income);
   nextPayDate.setHours(0, 0, 0, 0);
 
   // Calculate days until payday

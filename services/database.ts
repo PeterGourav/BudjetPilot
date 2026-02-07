@@ -1,12 +1,96 @@
 import * as SQLite from 'expo-sqlite';
 
+export type PayFrequency = 'biweekly' | 'monthly';
+
 export interface IncomeData {
-  payFrequency: 'weekly' | 'biweekly' | 'monthly';
+  payFrequency: PayFrequency;
   netPayAmount: number;
-  nextPayDate: string; // ISO date string
+  /** Kept for backward compatibility; next pay date is computed from pay days when available */
+  nextPayDate: string;
+  /** Day of month (1–31) for monthly pay. Used to compute next pay date each month. */
+  payDayOfMonth?: number;
+  /** First pay day of month (1–31) for biweekly. */
+  biweeklyPayDay1?: number;
+  /** Second pay day of month (1–31) for biweekly. */
+  biweeklyPayDay2?: number;
   irregularIncomeEnabled: boolean;
   irregularMonthlyAvg?: number;
   irregularReliability?: 'low' | 'medium' | 'high';
+}
+
+/**
+ * Get the last day of the month for a given date.
+ */
+function getLastDayOfMonth(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+
+/**
+ * Clamp day to the last day of the month (e.g. 31 → 28 in February).
+ */
+function clampToMonth(year: number, month: number, day: number): number {
+  const last = new Date(year, month + 1, 0).getDate();
+  return Math.min(day, last);
+}
+
+/**
+ * Compute the next pay date from stored pay-day settings.
+ * For monthly: next occurrence of payDayOfMonth (rolls to next month automatically).
+ * For biweekly: next occurrence of either biweeklyPayDay1 or biweeklyPayDay2.
+ */
+export function getNextPayDateFromIncome(income: IncomeData): Date {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const y = today.getFullYear();
+  const m = today.getMonth();
+
+  if (income.payFrequency === 'monthly' && income.payDayOfMonth != null) {
+    const day = clampToMonth(y, m, income.payDayOfMonth);
+    const thisMonth = new Date(y, m, day);
+    thisMonth.setHours(0, 0, 0, 0);
+    if (thisMonth >= today) return thisMonth;
+    const nextMonth = new Date(y, m + 1, clampToMonth(y, m + 1, income.payDayOfMonth));
+    nextMonth.setHours(0, 0, 0, 0);
+    return nextMonth;
+  }
+
+  if (
+    income.payFrequency === 'biweekly' &&
+    income.biweeklyPayDay1 != null &&
+    income.biweeklyPayDay2 != null
+  ) {
+    const d1 = income.biweeklyPayDay1;
+    const d2 = income.biweeklyPayDay2;
+    const lastThis = getLastDayOfMonth(today);
+    const candidates: Date[] = [
+      new Date(y, m, clampToMonth(y, m, d1)),
+      new Date(y, m, clampToMonth(y, m, d2)),
+    ];
+    candidates.sort((a, b) => a.getTime() - b.getTime());
+    for (const c of candidates) {
+      c.setHours(0, 0, 0, 0);
+      if (c >= today) return c;
+    }
+    const nextMonth = new Date(y, m + 1, 0);
+    const lastNext = nextMonth.getDate();
+    const nextCandidates: Date[] = [
+      new Date(y, m + 1, clampToMonth(y, m + 1, d1)),
+      new Date(y, m + 1, clampToMonth(y, m + 1, d2)),
+    ];
+    nextCandidates.sort((a, b) => a.getTime() - b.getTime());
+    nextCandidates[0].setHours(0, 0, 0, 0);
+    return nextCandidates[0];
+  }
+
+  if (income.nextPayDate) {
+    const fallback = new Date(income.nextPayDate);
+    fallback.setHours(0, 0, 0, 0);
+    if (fallback >= today) return fallback;
+    if (income.payFrequency === 'monthly' && income.payDayOfMonth != null) {
+      return getNextPayDateFromIncome(income);
+    }
+  }
+  return today;
 }
 
 export interface FixedExpense {
@@ -130,6 +214,23 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
     );
   `);
 
+  // Migrate income table: add pay-day columns if missing
+  try {
+    await db.execAsync('ALTER TABLE income ADD COLUMN pay_day_of_month INTEGER');
+  } catch {
+    /* column already exists */
+  }
+  try {
+    await db.execAsync('ALTER TABLE income ADD COLUMN biweekly_pay_day_1 INTEGER');
+  } catch {
+    /* column already exists */
+  }
+  try {
+    await db.execAsync('ALTER TABLE income ADD COLUMN biweekly_pay_day_2 INTEGER');
+  } catch {
+    /* column already exists */
+  }
+
   return db;
 }
 
@@ -151,19 +252,24 @@ export async function setOnboardingCompleted(completed: boolean): Promise<void> 
 
 export async function saveIncomeData(data: IncomeData): Promise<void> {
   const database = await initDatabase();
+  const nextPayDateIso = data.nextPayDate || getNextPayDateFromIncome(data).toISOString();
   await database.runAsync('DELETE FROM income');
   await database.runAsync(
     `INSERT INTO income (
       pay_frequency, net_pay_amount, next_pay_date,
-      irregular_income_enabled, irregular_monthly_avg, irregular_reliability
-    ) VALUES (?, ?, ?, ?, ?, ?)`,
+      irregular_income_enabled, irregular_monthly_avg, irregular_reliability,
+      pay_day_of_month, biweekly_pay_day_1, biweekly_pay_day_2
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.payFrequency,
       data.netPayAmount,
-      data.nextPayDate,
+      nextPayDateIso,
       data.irregularIncomeEnabled ? 1 : 0,
-      data.irregularMonthlyAvg || null,
-      data.irregularReliability || null,
+      data.irregularMonthlyAvg ?? null,
+      data.irregularReliability ?? null,
+      data.payDayOfMonth ?? null,
+      data.biweeklyPayDay1 ?? null,
+      data.biweeklyPayDay2 ?? null,
     ]
   );
 }
@@ -177,17 +283,24 @@ export async function getIncomeData(): Promise<IncomeData | null> {
     irregular_income_enabled: number;
     irregular_monthly_avg: number | null;
     irregular_reliability: string | null;
+    pay_day_of_month: number | null;
+    biweekly_pay_day_1: number | null;
+    biweekly_pay_day_2: number | null;
   }>('SELECT * FROM income LIMIT 1');
 
   if (!result) return null;
 
+  const payFrequency = result.pay_frequency === 'weekly' ? 'monthly' : (result.pay_frequency as PayFrequency);
   return {
-    payFrequency: result.pay_frequency as 'weekly' | 'biweekly' | 'monthly',
+    payFrequency,
     netPayAmount: result.net_pay_amount,
-    nextPayDate: result.next_pay_date,
+    nextPayDate: result.next_pay_date || '',
+    payDayOfMonth: result.pay_day_of_month ?? undefined,
+    biweeklyPayDay1: result.biweekly_pay_day_1 ?? undefined,
+    biweeklyPayDay2: result.biweekly_pay_day_2 ?? undefined,
     irregularIncomeEnabled: result.irregular_income_enabled === 1,
-    irregularMonthlyAvg: result.irregular_monthly_avg || undefined,
-    irregularReliability: (result.irregular_reliability as 'low' | 'medium' | 'high') || undefined,
+    irregularMonthlyAvg: result.irregular_monthly_avg ?? undefined,
+    irregularReliability: (result.irregular_reliability as 'low' | 'medium' | 'high') ?? undefined,
   };
 }
 

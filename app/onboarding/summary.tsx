@@ -1,13 +1,14 @@
 import { SettingsAccent } from "@/constants/theme";
 import type { IncomeData } from "@/services/database";
 import {
-    getDebts,
-    getFixedExpenses,
-    getFlexibleSpending,
-    getIncomeData,
-    getSavingsGoal,
-    getSubscriptions,
-    setOnboardingCompleted,
+  getDebts,
+  getFixedExpenses,
+  getFlexibleSpending,
+  getIncomeData,
+  getNextPayDateFromIncome,
+  getSavingsGoal,
+  getSubscriptions,
+  setOnboardingCompleted,
 } from "@/services/database";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -59,13 +60,11 @@ export default function SummaryScreen() {
 
     let monthly = 0;
     switch (incomeData.payFrequency) {
-      case "weekly":
-        monthly = incomeData.netPayAmount * 4.33;
-        break;
       case "biweekly":
         monthly = incomeData.netPayAmount * 2.17;
         break;
       case "monthly":
+      default:
         monthly = incomeData.netPayAmount;
         break;
     }
@@ -117,7 +116,7 @@ export default function SummaryScreen() {
       setIsOverBudget(false);
     }
 
-    const nextPay = new Date(incomeData.nextPayDate);
+    const nextPay = getNextPayDateFromIncome(incomeData);
     setNextPayDate(nextPay);
 
     const today = new Date();
